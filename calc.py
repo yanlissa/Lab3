@@ -37,6 +37,17 @@ def lexer(expr: str) -> List[Token]:
                     dot_seen = True
                 num += expr[i]
                 i += 1
+                
+            # Проверяем научную нотацию (например, 1e-3)
+            if i < len(expr) and expr[i].lower() == "e":
+                num += expr[i]
+                i += 1
+                if i < len(expr) and expr[i] in "+-":
+                    num += expr[i]
+                    i += 1
+                while i < len(expr) and expr[i].isdigit():
+                    num += expr[i]
+                    i += 1
 
             # Пропускаем пробелы после числа
             j = i
@@ -52,12 +63,19 @@ def lexer(expr: str) -> List[Token]:
             continue
 
         # операторы
-        if ch in "+-*/":
-            if ch == "-" and (last is None or last in {"OPERATOR", "UNARY_MINUS"}):
+        if ch in "+-*/^":
+            if ch == "-" and (last is None or last in {"OPERATOR", "UNARY_MINUS", "("}):
                 tokens.append(Token("UNARY_MINUS", ch))
             else:
                 tokens.append(Token("OPERATOR", ch))
             last = "OPERATOR"
+            i += 1
+            continue
+        
+        # скобки
+        if ch in "()":
+            tokens.append(Token(ch, ch))
+            last = ch
             i += 1
             continue
 
@@ -81,7 +99,7 @@ class UnaryOp:
 @dataclass(slots=True, eq=True)
 class BinaryOp:
     left: "Expr"
-    op: str           # + - * /
+    op: str           # + - * / ^
     right: "Expr"
 
 
@@ -96,7 +114,7 @@ def parser(tokens: List[Token]) -> Expr:
 
         while pos < len(tokens) and tokens[pos].type == "OPERATOR":
             op = tokens[pos].value
-            prec = {"+": 1, "-": 1, "*": 2, "/": 2}[op]
+            prec = {"+": 1, "-": 1, "*": 2, "/": 2, "^": 3}[op]
             if prec < min_prec:
                 break
             pos += 1
@@ -117,6 +135,12 @@ def parser(tokens: List[Token]) -> Expr:
         if tok.type == "UNARY_MINUS":
             expr, next_pos = parse_atom(pos + 1)
             return UnaryOp("-", expr), next_pos
+        
+        if tok.type == "(":
+            expr, next_pos = parse_expression(pos + 1)
+            if next_pos >= len(tokens) or tokens[next_pos].type != ")":
+                raise ValueError("Mismatched parentheses")
+            return expr, next_pos + 1
 
         raise ValueError(f"Unexpected token: {tok.type}") # токен, который парсер не ожидает
 
@@ -129,7 +153,7 @@ def parser(tokens: List[Token]) -> Expr:
 # Вычисления
 def _check(val: float) -> float:
     if math.isinf(val) or math.isnan(val):
-        raise ValueError("Arithmetic overflow") # подготовка к этапу 3
+        raise ValueError("Arithmetic overflow") # подготовка к этапу 3 (переполнение)
     return val
 
 
@@ -155,6 +179,8 @@ def evaluate(ast: Expr) -> float:
             if right == 0:
                 raise ValueError("Division by zero")
             res = left / right
+        elif ast.op == "^":
+            res = left ** right
         else:
             raise ValueError(f"Unknown operator {ast.op}") # передан неизвестный оператор
 
@@ -169,8 +195,8 @@ def calc(expr: str) -> float:
 
 #CLI
 def _cli() -> int:      # pragma: no cover
-    p = argparse.ArgumentParser(description="Stage‑1 CLI calculator")
-    p.add_argument("expression", help='Напр.: "1 + 2*3 - 4/5"')
+    p = argparse.ArgumentParser(description="Stage‑2 CLI calculator")
+    p.add_argument("expression", help='Examples: calc.py -- \"-8+1\"')
     args = p.parse_args()
 
     try:
