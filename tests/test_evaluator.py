@@ -35,6 +35,28 @@ def test_calc_ok(expr, result):
 )
 def test_calc_stage2(expr, result):
     assert calc.evaluate(calc.parser(calc.lexer(expr))) == result
+    
+# тесты этапа 3 (функциональные)
+@pytest.mark.parametrize(
+    ("expr", "angle_unit", "result"),
+    [
+        ("sin(90)", "degree", 1.0),
+        ("sin(pi/2)", "radian", 1.0),
+        ("sin(pi/2)", None, 1.0),
+        ("sqrt(4^2*5+1)", None, 9.0),
+        ("exp(ln(2))", None, 2.0),
+        ("ln(exp(2))", None, 2.0),
+        ("ln(e^2)", None, 2.0),
+        ("cos(0)", "radian", 1.0),
+        ("tg(pi/4)", "radian", 1.0),
+        ("ctg(pi/4)", "radian", 1.0),
+    ],
+)
+def test_calc_functions(expr, angle_unit, result):
+    if angle_unit:
+        assert abs(calc.calc(expr, angle_unit) - result) < 1e-10
+    else:
+        assert abs(calc.calc(expr) - result) < 1e-10
 
 # деление на ноль
 def test_division_by_zero():
@@ -54,3 +76,16 @@ def test_unknown_operator():
     bad_ast = BinaryOp(Number(1), "@", Number(2))
     with pytest.raises(ValueError, match="Unknown operator"):
         calc.evaluate(bad_ast)
+        
+# дополнительные ошибки
+def test_sqrt_negative():
+    with pytest.raises(ValueError, match="Square root of negative number"):
+        calc.calc("sqrt(-1)")
+
+def test_ln_non_positive():
+    with pytest.raises(ValueError, match="Logarithm of non-positive number"):
+        calc.calc("ln(0)")
+
+def test_ctg_undefined():
+    with pytest.raises(ValueError, match="Cotangent undefined"):
+        calc.calc("ctg(0)")

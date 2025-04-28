@@ -5,7 +5,8 @@ import os
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 
 import calc
-from calc import Number, UnaryOp, BinaryOp
+from calc import Number, UnaryOp, BinaryOp, Function
+import math
 
 
 #корректные выражения
@@ -36,6 +37,21 @@ from calc import Number, UnaryOp, BinaryOp
          BinaryOp(Number(1), "+",
                   BinaryOp(Number(2), "*",
                            BinaryOp(Number(3), "+", Number(4))))),
+        # функции и константы (этап 3)
+        ("pi", Number(math.pi)),
+        ("e", Number(math.e)),
+        ("sin(90)", Function("sin", Number(90.0))),
+        ("sqrt(4^2*5+1)",
+         Function("sqrt",
+                BinaryOp(
+                    BinaryOp(
+                        BinaryOp(Number(4), "^", Number(2)),
+                        "*",
+                        Number(5)
+                    ),
+                    "+",
+                    Number(1)
+        ))),
     ],
 )
 def test_parser_success(expr, expected_ast):
@@ -45,18 +61,23 @@ def test_parser_success(expr, expected_ast):
 
 # некорректные выражения
 @pytest.mark.parametrize(
-    "expr",
+    ("expr", "expected_error"),
     [
-        "",            # пустая строка
-        "2 @ 4",       # неподдерживаемый оператор
-        "2 /",         # обрезанное выражение
-        "1 1 + 2",     # "слипшиеся" числа
-        "1 + 4i",      # комплексное число
-        "abc",         # неизвестные символы
-        "1..5",        # два раза точка
-        "1+",          # конец на операторе
+        ("",            "Unexpected end of expression"),
+        ("2 @ 4",       "Invalid character: '@'"),
+        ("2 /",         "Invalid expression"),
+        ("1 1 + 2",     "Invalid number: digits separated by space"),
+        ("1 + 4i",      "Unknown function or constant: i"),
+        ("abc",         "Unknown function or constant: abc"),
+        ("1..5",        "Invalid number format"),
+        ("1+",          "Invalid expression"),
+        ("(1+",         "Mismatched parentheses"),
+        ("sin 90",      "Expected '\\(' after function sin"),
+        ("sin(90",      "Mismatched parentheses"),
+        ("(90",         "Mismatched parentheses"),
+        ("unknown(1)",  "Unknown function or constant: unknown"),
     ],
 )
-def test_parser_fail(expr):
-    with pytest.raises(ValueError):
+def test_parser_fail(expr, expected_error):
+    with pytest.raises(ValueError, match=expected_error):
         calc.parser(calc.lexer(expr))
