@@ -9,7 +9,6 @@ from calc import Number, UnaryOp, BinaryOp
 
 
 #корректные выражения
-
 @pytest.mark.parametrize(
     ("expr", "expected_ast"),
     [
@@ -30,6 +29,13 @@ from calc import Number, UnaryOp, BinaryOp
          BinaryOp(UnaryOp("-", Number(4)), "+",
                   BinaryOp(BinaryOp(Number(3), "*", Number(2)),
                            "/", Number(1)))),
+        # научная нотация и скобки (этап 2)
+        ("1.25e+09", Number(1250000000.0)),
+        ("3^4", BinaryOp(Number(3), "^", Number(4))),
+        ("1 + 2 * (3 + 4)",
+         BinaryOp(Number(1), "+",
+                  BinaryOp(Number(2), "*",
+                           BinaryOp(Number(3), "+", Number(4))))),
     ],
 )
 def test_parser_success(expr, expected_ast):
@@ -42,7 +48,7 @@ def test_parser_success(expr, expected_ast):
     "expr",
     [
         "",            # пустая строка
-        "2 ^ 4",       # неподдерживаемый оператор
+        "2 @ 4",       # неподдерживаемый оператор
         "2 /",         # обрезанное выражение
         "1 1 + 2",     # "слипшиеся" числа
         "1 + 4i",      # комплексное число
