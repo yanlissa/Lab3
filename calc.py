@@ -6,6 +6,9 @@ import sys
 from dataclasses import dataclass
 from typing import List, Union
 
+import sys
+sys.setrecursionlimit(2000)
+
 # Лексер
 @dataclass(slots=True)
 class Token:
@@ -133,8 +136,8 @@ Expr = Union[Number, UnaryOp, BinaryOp, Function]
 def parser(tokens: List[Token]) -> Expr:
     """Возвращает AST либо бросает ValueError."""
 
-    def parse_expression(pos: int, min_prec: int = 0) -> tuple[Expr, int]:
-        node, pos = parse_atom(pos)
+    def parse_expression(pos: int, min_prec: int = 0, inside_parens: bool = False) -> tuple[Expr, int]:
+        node, pos = parse_atom(pos, inside_parens)
 
         while pos < len(tokens) and tokens[pos].type == "OPERATOR":
             op = tokens[pos].value
@@ -143,15 +146,17 @@ def parser(tokens: List[Token]) -> Expr:
                 break
             pos += 1
             if pos >= len(tokens):
+                if inside_parens:
+                    raise ValueError("Mismatched parentheses")
                 raise ValueError("Invalid expression")
-            rhs, pos = parse_expression(pos, prec + 1)
+            rhs, pos = parse_expression(pos, prec + 1 if op != "^" else prec, inside_parens)
             node = BinaryOp(node, op, rhs)
 
         return node, pos
 
-    def parse_atom(pos: int) -> tuple[Expr, int]:
+    def parse_atom(pos: int, inside_parens: bool = False) -> tuple[Expr, int]:
         if pos >= len(tokens):
-            if any(token.type == "(" for token in tokens[:pos]):
+            if inside_parens or any(token.type == "(" for token in tokens[:pos]):
                 raise ValueError("Mismatched parentheses")
             raise ValueError("Unexpected end of expression") # пустая строка или незаконченное выражение
 
@@ -164,17 +169,17 @@ def parser(tokens: List[Token]) -> Expr:
             func_name = tok.value
             if pos + 1 >= len(tokens) or tokens[pos + 1].type != "(":
                 raise ValueError(f"Expected '(' after function {func_name}")
-            arg, next_pos = parse_expression(pos + 2)
+            arg, next_pos = parse_expression(pos + 2, inside_parens=True)
             if next_pos >= len(tokens) or tokens[next_pos].type != ")":
                 raise ValueError("Mismatched parentheses")
             return Function(func_name, arg), next_pos + 1
 
         if tok.type == "UNARY_MINUS":
-            expr, next_pos = parse_atom(pos + 1)
+            expr, next_pos = parse_atom(pos + 1, inside_parens)
             return UnaryOp("-", expr), next_pos
-        
+
         if tok.type == "(":
-            expr, next_pos = parse_expression(pos + 1)
+            expr, next_pos = parse_expression(pos + 1, inside_parens=True)
             if next_pos >= len(tokens) or tokens[next_pos].type != ")":
                 raise ValueError("Mismatched parentheses")
             return expr, next_pos + 1
@@ -206,20 +211,23 @@ def evaluate(ast: Expr, angle_unit: str = "radian") -> float:
         left = evaluate(ast.left, angle_unit)
         right = evaluate(ast.right, angle_unit)
 
-        if ast.op == "+":
-            res = left + right
-        elif ast.op == "-":
-            res = left - right
-        elif ast.op == "*":
-            res = left * right
-        elif ast.op == "/":
-            if right == 0:
-                raise ValueError("Division by zero")
-            res = left / right
-        elif ast.op == "^":
-            res = left ** right
-        else:
-            raise ValueError(f"Unknown operator {ast.op}") # передан неизвестный оператор
+        try:
+            if ast.op == "+":
+                res = left + right
+            elif ast.op == "-":
+                res = left - right
+            elif ast.op == "*":
+                res = left * right
+            elif ast.op == "/":
+                if right == 0:
+                    raise ValueError("Division by zero")
+                res = left / right
+            elif ast.op == "^":
+                res = left ** right
+            else:
+                raise ValueError(f"Unknown operator {ast.op}") # передан неизвестный оператор
+        except OverflowError:
+            raise ValueError("Arithmetic overflow")
 
         return _check(res)
 
@@ -245,10 +253,14 @@ def evaluate(ast: Expr, angle_unit: str = "radian") -> float:
                 raise ValueError("Logarithm of non-positive number")
             return math.log(arg)
         elif ast.name == "exp":
-            return math.exp(arg)
+            try:
+                res = math.exp(arg)
+            except OverflowError:
+                raise ValueError("Arithmetic overflow")
+            return _check(res)
         else:
             raise ValueError(f"Unknown function: {ast.name}")
-    
+
     raise TypeError("Unknown AST node") # передан объект, не являющийся Number, UnaryOp или BinaryOp
 
 
@@ -270,7 +282,7 @@ def _cli() -> int:      # pragma: no cover
 
     try:
         result = calc(args.expression, args.angle_unit)
-        print(f"{result:.5f}")
+        print(f"{result:.3e}")
         return 0
     except ValueError as e:
         print(f"Error: {e}", file=sys.stderr)
