@@ -136,11 +136,20 @@ Expr = Union[Number, UnaryOp, BinaryOp, Function]
 def parser(tokens: List[Token]) -> Expr:
     """Возвращает AST либо бросает ValueError."""
 
-    def parse_expression(pos: int, min_prec: int = 0, inside_parens: bool = False) -> tuple[Expr, int]:
-        node, pos = parse_atom(pos, inside_parens)
+    def parse_expression(pos: int, min_prec: float = 0, inside_parens: bool = False) -> tuple[Expr, int]:
+        # Обработка унарного минуса как отдельной операции
+        if pos < len(tokens) and tokens[pos].type == "UNARY_MINUS":
+            op = tokens[pos].value
+            pos += 1
+            # Унарный минус должен иметь приоритет выше, чем у '^'
+            expr, pos = parse_expression(pos, 2.5, inside_parens)
+            node: Expr = UnaryOp(op, expr)
+        else:
+            node, pos = parse_atom(pos, inside_parens)
 
         while pos < len(tokens) and tokens[pos].type == "OPERATOR":
             op = tokens[pos].value
+            # приоритеты: чем больше число — тем выше приоритет
             prec = {"+": 1, "-": 1, "*": 2, "/": 2, "^": 3}[op]
             if prec < min_prec:
                 break
@@ -149,7 +158,9 @@ def parser(tokens: List[Token]) -> Expr:
                 if inside_parens:
                     raise ValueError("Mismatched parentheses")
                 raise ValueError("Invalid expression")
-            rhs, pos = parse_expression(pos, prec + 1 if op != "^" else prec, inside_parens)
+            # для '^' ассоциативность правая — не увеличиваем prec
+            next_min_prec = prec + 1 if op != "^" else prec
+            rhs, pos = parse_expression(pos, next_min_prec, inside_parens)
             node = BinaryOp(node, op, rhs)
 
         return node, pos
@@ -158,13 +169,13 @@ def parser(tokens: List[Token]) -> Expr:
         if pos >= len(tokens):
             if inside_parens or any(token.type == "(" for token in tokens[:pos]):
                 raise ValueError("Mismatched parentheses")
-            raise ValueError("Unexpected end of expression") # пустая строка или незаконченное выражение
+            raise ValueError("Unexpected end of expression")
 
         tok = tokens[pos]
 
         if tok.type == "NUMBER":
             return Number(tok.value), pos + 1
-        
+
         if tok.type == "FUNCTION":
             func_name = tok.value
             if pos + 1 >= len(tokens) or tokens[pos + 1].type != "(":
@@ -174,17 +185,13 @@ def parser(tokens: List[Token]) -> Expr:
                 raise ValueError("Mismatched parentheses")
             return Function(func_name, arg), next_pos + 1
 
-        if tok.type == "UNARY_MINUS":
-            expr, next_pos = parse_atom(pos + 1, inside_parens)
-            return UnaryOp("-", expr), next_pos
-
         if tok.type == "(":
             expr, next_pos = parse_expression(pos + 1, inside_parens=True)
             if next_pos >= len(tokens) or tokens[next_pos].type != ")":
                 raise ValueError("Mismatched parentheses")
             return expr, next_pos + 1
 
-        raise ValueError(f"Unexpected token: {tok.type}") # токен, который парсер не ожидает
+        raise ValueError(f"Unexpected token: {tok.type}")
 
     ast, idx = parse_expression(0)
     if idx != len(tokens):
@@ -224,6 +231,8 @@ def evaluate(ast: Expr, angle_unit: str = "radian") -> float:
                 res = left / right
             elif ast.op == "^":
                 res = left ** right
+                if isinstance(res, complex):
+                    raise ValueError("Complex result is not supported")
             else:
                 raise ValueError(f"Unknown operator {ast.op}") # передан неизвестный оператор
         except OverflowError:

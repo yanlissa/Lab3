@@ -89,3 +89,7 @@ def test_ln_non_positive():
 def test_ctg_undefined():
     with pytest.raises(ValueError, match="Cotangent undefined"):
         calc.calc("ctg(0)")
+        
+def test_pow_negative():
+    with pytest.raises(ValueError, match="Complex result is not supported"):
+        calc.calc("(-1)^0.5")
